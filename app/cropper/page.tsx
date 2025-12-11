@@ -387,21 +387,26 @@ export default function CropperPage() {
   const handleZoomChange = (value: number[]) => {
     const newZoom = value[0]
     const oldZoom = zoom
-    setZoom(newZoom)
-    setPreviousZoom(newZoom)
+    
+    if (newZoom === oldZoom) return
     
     const scale = newZoom / oldZoom
-    const newScaledWidth = baseCropBoxSize.width * (newZoom / 100)
-    const newScaledHeight = baseCropBoxSize.height * (newZoom / 100)
+    const currentBaseWidth = cropBoxSize.width / (oldZoom / 100)
+    const currentBaseHeight = cropBoxSize.height / (oldZoom / 100)
+    
+    const newScaledWidth = currentBaseWidth * (newZoom / 100)
+    const newScaledHeight = currentBaseHeight * (newZoom / 100)
     
     const currentCenterX = cropBoxPosition.x + cropBoxSize.width / 2
     const currentCenterY = cropBoxPosition.y + cropBoxSize.height / 2
     
+    setZoom(newZoom)
+    setPreviousZoom(newZoom)
+    setBaseCropBoxSize({ width: currentBaseWidth, height: currentBaseHeight })
     setCropBoxSize({
       width: newScaledWidth,
       height: newScaledHeight,
     })
-    
     setCropBoxPosition({
       x: currentCenterX - newScaledWidth / 2,
       y: currentCenterY - newScaledHeight / 2,
@@ -421,20 +426,22 @@ export default function CropperPage() {
     if (newZoom === oldZoom) return
 
     const scale = newZoom / oldZoom
-    const newScaledWidth = baseCropBoxSize.width * (newZoom / 100)
-    const newScaledHeight = baseCropBoxSize.height * (newZoom / 100)
+    const currentBaseWidth = cropBoxSize.width / (oldZoom / 100)
+    const currentBaseHeight = cropBoxSize.height / (oldZoom / 100)
+    
+    const newScaledWidth = currentBaseWidth * (newZoom / 100)
+    const newScaledHeight = currentBaseHeight * (newZoom / 100)
     
     const currentCenterX = cropBoxPosition.x + cropBoxSize.width / 2
     const currentCenterY = cropBoxPosition.y + cropBoxSize.height / 2
     
     setZoom(newZoom)
     setPreviousZoom(newZoom)
-    
+    setBaseCropBoxSize({ width: currentBaseWidth, height: currentBaseHeight })
     setCropBoxSize({
       width: newScaledWidth,
       height: newScaledHeight,
     })
-    
     setCropBoxPosition({
       x: currentCenterX - newScaledWidth / 2,
       y: currentCenterY - newScaledHeight / 2,
@@ -586,11 +593,48 @@ export default function CropperPage() {
         (document as any).mozFullScreenElement ||
         (document as any).msFullscreenElement
       )
-      setIsFullscreen(isCurrentlyFullscreen)
       
-      setTimeout(() => {
-        updateContainerSize()
-      }, 100)
+      if (isCurrentlyFullscreen !== isFullscreen && containerRef.current) {
+        const oldContainerWidth = containerSize.width
+        const oldContainerHeight = containerSize.height
+        
+        setIsFullscreen(isCurrentlyFullscreen)
+        
+        setTimeout(() => {
+          if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect()
+            const newContainerWidth = rect.width
+            const newContainerHeight = rect.height
+            
+            if (oldContainerWidth > 0 && oldContainerHeight > 0 && newContainerWidth > 0 && newContainerHeight > 0) {
+              const scaleX = newContainerWidth / oldContainerWidth
+              const scaleY = newContainerHeight / oldContainerHeight
+              
+              setCropBoxPosition((prev) => ({
+                x: prev.x * scaleX,
+                y: prev.y * scaleY,
+              }))
+              
+              setBaseCropBoxSize((prev) => ({
+                width: prev.width * scaleX,
+                height: prev.height * scaleY,
+              }))
+              
+              setCropBoxSize((prev) => ({
+                width: prev.width * scaleX,
+                height: prev.height * scaleY,
+              }))
+            }
+          }
+          
+          updateContainerSize()
+        }, 100)
+      } else {
+        setIsFullscreen(isCurrentlyFullscreen)
+        setTimeout(() => {
+          updateContainerSize()
+        }, 100)
+      }
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange)
@@ -604,7 +648,7 @@ export default function CropperPage() {
       document.removeEventListener("mozfullscreenchange", handleFullscreenChange)
       document.removeEventListener("msfullscreenchange", handleFullscreenChange)
     }
-  }, [])
+  }, [isFullscreen, containerSize])
 
   const imageDisplaySize = getImageDisplaySize()
   const aspectRatio = cropWidth / cropHeight
@@ -857,7 +901,7 @@ export default function CropperPage() {
                 >
                   Crop Another Image
                 </Button>
-                <Button
+                {/* <Button
                   onClick={toggleFullscreen}
                   disabled={!imageLoaded}
                   variant="outline"
@@ -874,7 +918,7 @@ export default function CropperPage() {
                       Fullscreen
                     </>
                   )}
-                </Button>
+                </Button> */}
               </div>
             </div>
           </div>
