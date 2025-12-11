@@ -37,6 +37,21 @@ export default function CropperPage() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const zoomRef = useRef(zoom)
+  const cropBoxSizeRef = useRef(cropBoxSize)
+  const cropBoxPositionRef = useRef(cropBoxPosition)
+  
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
+  
+  useEffect(() => {
+    cropBoxSizeRef.current = cropBoxSize
+  }, [cropBoxSize])
+  
+  useEffect(() => {
+    cropBoxPositionRef.current = cropBoxPosition
+  }, [cropBoxPosition])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -117,6 +132,52 @@ export default function CropperPage() {
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !imageLoaded) return
+
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const delta = e.deltaY > 0 ? -5 : 5
+      const oldZoom = zoomRef.current
+      const newZoom = Math.max(50, Math.min(200, oldZoom + delta))
+      
+      if (newZoom === oldZoom) return
+
+      const currentSize = cropBoxSizeRef.current
+      const currentPos = cropBoxPositionRef.current
+      
+      const currentBaseWidth = currentSize.width / (oldZoom / 100)
+      const currentBaseHeight = currentSize.height / (oldZoom / 100)
+      
+      const newScaledWidth = currentBaseWidth * (newZoom / 100)
+      const newScaledHeight = currentBaseHeight * (newZoom / 100)
+      
+      const currentCenterX = currentPos.x + currentSize.width / 2
+      const currentCenterY = currentPos.y + currentSize.height / 2
+      
+      setZoom(newZoom)
+      setPreviousZoom(newZoom)
+      setBaseCropBoxSize({ width: currentBaseWidth, height: currentBaseHeight })
+      setCropBoxSize({
+        width: newScaledWidth,
+        height: newScaledHeight,
+      })
+      setCropBoxPosition({
+        x: currentCenterX - newScaledWidth / 2,
+        y: currentCenterY - newScaledHeight / 2,
+      })
+    }
+    
+    container.addEventListener("wheel", wheelHandler, { passive: false })
+    
+    return () => {
+      container.removeEventListener("wheel", wheelHandler)
+    }
+  }, [imageLoaded])
 
   useEffect(() => {
     if (imageLoaded && containerSize.width > 0 && containerSize.height > 0) {
@@ -413,7 +474,7 @@ export default function CropperPage() {
     })
   }
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = (e: WheelEvent) => {
     if (!imageLoaded) return
     
     e.preventDefault()
@@ -826,7 +887,6 @@ export default function CropperPage() {
                   onMouseEnter={() => {
                     document.body.style.overflow = "hidden"
                   }}
-                  onWheel={handleWheel}
                 >
                   {previewUrl && (
                     <img
