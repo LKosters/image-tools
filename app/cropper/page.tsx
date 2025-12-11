@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Download, X } from "lucide-react"
+import { Download, X, Maximize, Minimize } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,6 +33,7 @@ export default function CropperPage() {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 })
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
 
@@ -135,7 +136,7 @@ export default function CropperPage() {
     if (!imageLoaded || imageNaturalSize.width === 0) return { width: 0, height: 0 }
 
     const baseSize = getBaseImageDisplaySize()
-    return { width: baseSize.width * (zoom / 100), height: baseSize.height * (zoom / 100) }
+    return { width: baseSize.width, height: baseSize.height }
   }
 
   const handleImageMouseDown = (e: React.MouseEvent) => {
@@ -354,18 +355,15 @@ export default function CropperPage() {
     const imageAspectRatio = imageNaturalSize.width / imageNaturalSize.height
     const containerAspectRatio = containerSize.width / containerSize.height
 
-    const baseWidth = containerSize.width
-    const baseHeight = containerSize.height
-
-    let displayWidth = baseWidth
-    let displayHeight = baseHeight
+    let displayWidth: number
+    let displayHeight: number
 
     if (imageAspectRatio > containerAspectRatio) {
-      displayWidth = baseWidth
-      displayHeight = baseWidth / imageAspectRatio
+      displayWidth = containerSize.width
+      displayHeight = containerSize.width / imageAspectRatio
     } else {
-      displayWidth = baseHeight * imageAspectRatio
-      displayHeight = baseHeight
+      displayWidth = containerSize.height * imageAspectRatio
+      displayHeight = containerSize.height
     }
 
     return { width: displayWidth, height: displayHeight }
@@ -373,50 +371,39 @@ export default function CropperPage() {
 
   const handleZoomChange = (value: number[]) => {
     const newZoom = value[0]
-    const oldZoom = previousZoom
     setZoom(newZoom)
     setPreviousZoom(newZoom)
+  }
 
-    if (!imageLoaded || oldZoom === newZoom) return
+  const handleWheel = (e: React.WheelEvent) => {
+    if (!imageLoaded) return
+    
+    e.preventDefault()
+    e.stopPropagation()
 
-    const baseSize = getBaseImageDisplaySize()
-    const oldWidth = baseSize.width * (oldZoom / 100)
-    const oldHeight = baseSize.height * (oldZoom / 100)
-    const newWidth = baseSize.width * (newZoom / 100)
-    const newHeight = baseSize.height * (newZoom / 100)
+    const delta = e.deltaY > 0 ? -5 : 5
+    const newZoom = Math.max(50, Math.min(200, zoom + delta))
+    
+    if (newZoom === zoom) return
 
-    if (newWidth <= containerSize.width && newHeight <= containerSize.height) {
-      setImagePosition({ x: 0, y: 0 })
-      return
-    }
-
-    const oldCenterX = (containerSize.width - oldWidth) / 2 + imagePosition.x
-    const oldCenterY = (containerSize.height - oldHeight) / 2 + imagePosition.y
-
-    const newPosX = oldCenterX - (containerSize.width - newWidth) / 2
-    const newPosY = oldCenterY - (containerSize.height - newHeight) / 2
-
-    const minX = containerSize.width - newWidth
-    const minY = containerSize.height - newHeight
-
-    setImagePosition({
-      x: Math.max(minX, Math.min(0, newPosX)),
-      y: Math.max(minY, Math.min(0, newPosY)),
-    })
+    setZoom(newZoom)
+    setPreviousZoom(newZoom)
   }
 
   useEffect(() => {
     if (!imageLoaded || !containerRef.current) return
 
     const imageDisplaySize = getImageDisplaySize()
+    const scaledWidth = imageDisplaySize.width * (zoom / 100)
+    const scaledHeight = imageDisplaySize.height * (zoom / 100)
     
-    if (imageDisplaySize.width <= containerSize.width && imageDisplaySize.height <= containerSize.height) {
+    if (scaledWidth <= containerSize.width && scaledHeight <= containerSize.height) {
       setImagePosition({ x: 0, y: 0 })
       return
     }
 
-    const minX = containerSize.width - imageDisplaySize.width
-    const minY = containerSize.height - imageDisplaySize.height
+    const minX = containerSize.width - scaledWidth
+    const minY = containerSize.height - scaledHeight
     
     setImagePosition((prev) => {
       const constrainedX = Math.max(minX, Math.min(0, prev.x))
@@ -428,7 +415,7 @@ export default function CropperPage() {
       
       return prev
     })
-  }, [containerSize, imageLoaded])
+  }, [containerSize, imageLoaded, zoom])
 
   const cropAndDownloadImage = async () => {
     if (!previewUrl || !imageLoaded || !containerRef.current) return
@@ -455,14 +442,17 @@ export default function CropperPage() {
     const cropBoxLeft = cropBoxPosition.x - containerRect.left
     const cropBoxTop = cropBoxPosition.y - containerRect.top
 
-    const imageLeft = (containerSize.width - imageDisplaySize.width) / 2 + imagePosition.x
-    const imageTop = (containerSize.height - imageDisplaySize.height) / 2 + imagePosition.y
+    const scaledWidth = imageDisplaySize.width * (zoom / 100)
+    const scaledHeight = imageDisplaySize.height * (zoom / 100)
+
+    const imageLeft = (containerSize.width - scaledWidth) / 2 + imagePosition.x
+    const imageTop = (containerSize.height - scaledHeight) / 2 + imagePosition.y
 
     const cropXInImage = cropBoxLeft - imageLeft
     const cropYInImage = cropBoxTop - imageTop
 
-    const scaleX = imageNaturalSize.width / imageDisplaySize.width
-    const scaleY = imageNaturalSize.height / imageDisplaySize.height
+    const scaleX = imageNaturalSize.width / scaledWidth
+    const scaleY = imageNaturalSize.height / scaledHeight
 
     const sourceX = Math.max(0, cropXInImage * scaleX)
     const sourceY = Math.max(0, cropYInImage * scaleY)
@@ -502,6 +492,68 @@ export default function CropperPage() {
       URL.revokeObjectURL(croppedUrl)
     }
   }
+
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return
+
+    if (!isFullscreen) {
+      try {
+        if (containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen()
+        } else if ((containerRef.current as any).webkitRequestFullscreen) {
+          await (containerRef.current as any).webkitRequestFullscreen()
+        } else if ((containerRef.current as any).mozRequestFullScreen) {
+          await (containerRef.current as any).mozRequestFullScreen()
+        } else if ((containerRef.current as any).msRequestFullscreen) {
+          await (containerRef.current as any).msRequestFullscreen()
+        }
+      } catch (error) {
+        console.error("Error attempting to enable fullscreen:", error)
+      }
+    } else {
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen()
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen()
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen()
+        }
+      } catch (error) {
+        console.error("Error attempting to exit fullscreen:", error)
+      }
+    }
+  }
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      )
+      setIsFullscreen(isCurrentlyFullscreen)
+      
+      setTimeout(() => {
+        updateContainerSize()
+      }, 100)
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange)
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange)
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange)
+    document.addEventListener("msfullscreenchange", handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange)
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange)
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange)
+      document.removeEventListener("msfullscreenchange", handleFullscreenChange)
+    }
+  }, [])
 
   const imageDisplaySize = getImageDisplaySize()
   const aspectRatio = cropWidth / cropHeight
@@ -576,7 +628,7 @@ export default function CropperPage() {
                     value={[zoom]}
                     onValueChange={handleZoomChange}
                     min={50}
-                    max={100}
+                    max={200}
                     step={5}
                     className="w-full"
                   />
@@ -584,17 +636,96 @@ export default function CropperPage() {
               )}
 
               <div className="mb-8">
+                {isFullscreen && (
+                  <div className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-sm border-b border-white/20 p-4">
+                    <div className="container mx-auto max-w-7xl flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1">
+                        <h3 className="font-serif text-xl text-white">Crop Image</h3>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="crop-width-fs" className="font-sans text-sm text-white/80">
+                              Width:
+                            </Label>
+                            <Input
+                              id="crop-width-fs"
+                              type="number"
+                              min="1"
+                              value={cropWidth}
+                              onChange={(e) => setCropWidth(Number.parseInt(e.target.value) || 1)}
+                              className="bg-white/10 border-white/20 text-white font-sans w-24 h-8"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="crop-height-fs" className="font-sans text-sm text-white/80">
+                              Height:
+                            </Label>
+                            <Input
+                              id="crop-height-fs"
+                              type="number"
+                              min="1"
+                              value={cropHeight}
+                              onChange={(e) => setCropHeight(Number.parseInt(e.target.value) || 1)}
+                              className="bg-white/10 border-white/20 text-white font-sans w-24 h-8"
+                            />
+                          </div>
+                        </div>
+                        {previewUrl && imageLoaded && (
+                          <div className="flex items-center gap-2 flex-1 max-w-xs">
+                            <Label className="font-sans text-sm text-white/80 whitespace-nowrap">
+                              Zoom: {zoom}%
+                            </Label>
+                            <Slider
+                              value={[zoom]}
+                              onValueChange={handleZoomChange}
+                              min={50}
+                              max={200}
+                              step={5}
+                              className="flex-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={cropAndDownloadImage}
+                          disabled={!imageLoaded}
+                          className="bg-[#CCADAC] hover:bg-[#CCADAC]/80 text-black font-sans"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download
+                        </Button>
+                        <Button
+                          onClick={toggleFullscreen}
+                          variant="outline"
+                          className="border-white/20 hover:bg-white/10 font-sans bg-transparent"
+                        >
+                          <Minimize className="w-4 h-4 mr-2" />
+                          Exit Fullscreen
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div
                   ref={containerRef}
-                  className="relative bg-black/50 border-2 border-white/20 rounded overflow-hidden mx-auto"
+                  className={`relative border-2 border-white/20 rounded overflow-hidden ${isFullscreen ? "fixed inset-0 z-50 m-0 rounded-none" : "mx-auto"}`}
                   style={{
-                    width: "100%",
-                    maxWidth: "600px",
-                    height: "400px",
+                    width: isFullscreen ? "100vw" : "100%",
+                    maxWidth: isFullscreen ? "100vw" : "600px",
+                    height: isFullscreen ? "calc(100vh - 80px)" : "400px",
+                    marginTop: isFullscreen ? "80px" : "0",
+                    backgroundImage: `
+                      linear-gradient(45deg, #808080 25%, transparent 25%, transparent 75%, #808080 75%, #808080),
+                      linear-gradient(45deg, #808080 25%, transparent 25%, transparent 75%, #808080 75%, #808080)
+                    `,
+                    backgroundSize: "20px 20px",
+                    backgroundPosition: "0 0, 10px 10px",
+                    backgroundColor: "#404040",
                   }}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
                   onMouseLeave={handleMouseUp}
+                  onWheel={handleWheel}
                 >
                   {previewUrl && (
                     <img
@@ -608,7 +739,8 @@ export default function CropperPage() {
                         height: `${imageDisplaySize.height}px`,
                         left: `${(containerSize.width - imageDisplaySize.width) / 2 + imagePosition.x}px`,
                         top: `${(containerSize.height - imageDisplaySize.height) / 2 + imagePosition.y}px`,
-                        objectFit: "contain",
+                        transform: `scale(${zoom / 100})`,
+                        transformOrigin: "center center",
                       }}
                       draggable={false}
                       onMouseDown={handleImageMouseDown}
@@ -648,7 +780,7 @@ export default function CropperPage() {
                   </div>
                 </div>
                 <p className="text-white/40 font-sans text-xs mt-2 text-center">
-                  Drag image to move • Drag crop box to reposition • Drag any corner to resize
+                  Drag image to move • Drag crop box to reposition • Drag any corner to resize • Scroll to zoom
                 </p>
               </div>
 
@@ -667,6 +799,24 @@ export default function CropperPage() {
                   className="w-full border-white/20 hover:bg-white/10 font-sans bg-transparent"
                 >
                   Crop Another Image
+                </Button>
+                <Button
+                  onClick={toggleFullscreen}
+                  disabled={!imageLoaded}
+                  variant="outline"
+                  className="w-full border-white/20 hover:bg-white/10 font-sans bg-transparent"
+                >
+                  {isFullscreen ? (
+                    <>
+                      <Minimize className="w-5 h-5 mr-2" />
+                      Exit Fullscreen
+                    </>
+                  ) : (
+                    <>
+                      <Maximize className="w-5 h-5 mr-2" />
+                      Fullscreen
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
