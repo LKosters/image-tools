@@ -28,6 +28,7 @@ export default function CropperPage() {
   const [isDraggingImage, setIsDraggingImage] = useState(false)
   const [isDraggingCropBox, setIsDraggingCropBox] = useState(false)
   const [isResizingCropBox, setIsResizingCropBox] = useState(false)
+  const [resizeHandle, setResizeHandle] = useState<string>("")
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
@@ -96,7 +97,7 @@ export default function CropperPage() {
       updateContainerSize()
 
       const aspectRatio = cropWidth / cropHeight
-      const maxSize = Math.min(containerSize.width * 0.8, containerSize.height * 0.8)
+      const maxSize = Math.min(containerSize.width * 0.3, containerSize.height * 0.3)
       const boxWidth = maxSize
       const boxHeight = boxWidth / aspectRatio
 
@@ -116,12 +117,19 @@ export default function CropperPage() {
   }, [])
 
   useEffect(() => {
-    if (imageLoaded) {
+    if (imageLoaded && containerSize.width > 0 && containerSize.height > 0) {
       const aspectRatio = cropWidth / cropHeight
-      const newWidth = cropBoxSize.height * aspectRatio
-      setCropBoxSize((prev) => ({ width: newWidth, height: prev.height }))
+      const maxSize = Math.min(containerSize.width * 0.3, containerSize.height * 0.3)
+      const boxWidth = maxSize
+      const boxHeight = boxWidth / aspectRatio
+
+      setCropBoxSize({ width: boxWidth, height: boxHeight })
+      setCropBoxPosition({
+        x: (containerSize.width - boxWidth) / 2,
+        y: (containerSize.height - boxHeight) / 2,
+      })
     }
-  }, [cropWidth, cropHeight])
+  }, [cropWidth, cropHeight, imageLoaded, containerSize])
 
   const getImageDisplaySize = () => {
     if (!imageLoaded || imageNaturalSize.width === 0) return { width: 0, height: 0 }
@@ -149,11 +157,12 @@ export default function CropperPage() {
     })
   }
 
-  const handleResizeHandleMouseDown = (e: React.MouseEvent) => {
+  const handleResizeHandleMouseDown = (e: React.MouseEvent, handle: string) => {
     if (!containerRef.current) return
     e.preventDefault()
     e.stopPropagation()
     setIsResizingCropBox(true)
+    setResizeHandle(handle)
     setDragStart({ x: e.clientX, y: e.clientY })
   }
 
@@ -176,15 +185,61 @@ export default function CropperPage() {
       })
     } else if (isResizingCropBox) {
       const aspectRatio = cropWidth / cropHeight
+      const rect = containerRef.current.getBoundingClientRect()
       const deltaX = e.clientX - dragStart.x
       const deltaY = e.clientY - dragStart.y
-      const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
+      
+      let newWidth = cropBoxSize.width
+      let newHeight = cropBoxSize.height
+      let newX = cropBoxPosition.x
+      let newY = cropBoxPosition.y
 
-      const newWidth = Math.max(50, Math.min(containerSize.width, cropBoxSize.width + delta))
-      const newHeight = newWidth / aspectRatio
+      if (resizeHandle === "bottom-right") {
+        const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
+        newWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, cropBoxSize.width + delta))
+        newHeight = newWidth / aspectRatio
+        if (newHeight > containerSize.height - cropBoxPosition.y) {
+          newHeight = containerSize.height - cropBoxPosition.y
+          newWidth = newHeight * aspectRatio
+        }
+      } else if (resizeHandle === "top-left") {
+        const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY < 0 ? -1 : 1)
+        const oldRight = cropBoxPosition.x + cropBoxSize.width
+        const oldBottom = cropBoxPosition.y + cropBoxSize.height
+        newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
+        newHeight = newWidth / aspectRatio
+        if (newHeight > oldBottom) {
+          newHeight = oldBottom
+          newWidth = newHeight * aspectRatio
+        }
+        newX = oldRight - newWidth
+        newY = oldBottom - newHeight
+      } else if (resizeHandle === "top-right") {
+        const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY < 0 ? 1 : -1)
+        const oldBottom = cropBoxPosition.y + cropBoxSize.height
+        newWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, cropBoxSize.width + delta))
+        newHeight = newWidth / aspectRatio
+        if (newHeight > oldBottom) {
+          newHeight = oldBottom
+          newWidth = newHeight * aspectRatio
+        }
+        newY = oldBottom - newHeight
+      } else if (resizeHandle === "bottom-left") {
+        const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY > 0 ? -1 : 1)
+        const oldRight = cropBoxPosition.x + cropBoxSize.width
+        newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
+        newHeight = newWidth / aspectRatio
+        if (newHeight > containerSize.height - cropBoxPosition.y) {
+          newHeight = containerSize.height - cropBoxPosition.y
+          newWidth = newHeight * aspectRatio
+        }
+        newX = oldRight - newWidth
+      }
 
-      if (newWidth <= containerSize.width && newHeight <= containerSize.height) {
+      if (newWidth >= 50 && newHeight >= 50 && newX >= 0 && newY >= 0 && 
+          newX + newWidth <= containerSize.width && newY + newHeight <= containerSize.height) {
         setCropBoxSize({ width: newWidth, height: newHeight })
+        setCropBoxPosition({ x: newX, y: newY })
         setDragStart({ x: e.clientX, y: e.clientY })
       }
     }
@@ -214,16 +269,63 @@ export default function CropperPage() {
           y: Math.max(0, Math.min(rect.height - cropBoxSize.height, newY)),
         })
       } else if (isResizingCropBox) {
+        if (!containerRef.current) return
         const aspectRatio = cropWidth / cropHeight
+        const rect = containerRef.current.getBoundingClientRect()
         const deltaX = e.clientX - dragStart.x
         const deltaY = e.clientY - dragStart.y
-        const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
+        
+        let newWidth = cropBoxSize.width
+        let newHeight = cropBoxSize.height
+        let newX = cropBoxPosition.x
+        let newY = cropBoxPosition.y
 
-        const newWidth = Math.max(50, Math.min(containerSize.width, cropBoxSize.width + delta))
-        const newHeight = newWidth / aspectRatio
+        if (resizeHandle === "bottom-right") {
+          const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
+          newWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, cropBoxSize.width + delta))
+          newHeight = newWidth / aspectRatio
+          if (newHeight > rect.height - cropBoxPosition.y) {
+            newHeight = rect.height - cropBoxPosition.y
+            newWidth = newHeight * aspectRatio
+          }
+        } else if (resizeHandle === "top-left") {
+          const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY < 0 ? -1 : 1)
+          const oldRight = cropBoxPosition.x + cropBoxSize.width
+          const oldBottom = cropBoxPosition.y + cropBoxSize.height
+          newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
+          newHeight = newWidth / aspectRatio
+          if (newHeight > oldBottom) {
+            newHeight = oldBottom
+            newWidth = newHeight * aspectRatio
+          }
+          newX = oldRight - newWidth
+          newY = oldBottom - newHeight
+        } else if (resizeHandle === "top-right") {
+          const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY < 0 ? 1 : -1)
+          const oldBottom = cropBoxPosition.y + cropBoxSize.height
+          newWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, cropBoxSize.width + delta))
+          newHeight = newWidth / aspectRatio
+          if (newHeight > oldBottom) {
+            newHeight = oldBottom
+            newWidth = newHeight * aspectRatio
+          }
+          newY = oldBottom - newHeight
+        } else if (resizeHandle === "bottom-left") {
+          const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY > 0 ? -1 : 1)
+          const oldRight = cropBoxPosition.x + cropBoxSize.width
+          newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
+          newHeight = newWidth / aspectRatio
+          if (newHeight > rect.height - cropBoxPosition.y) {
+            newHeight = rect.height - cropBoxPosition.y
+            newWidth = newHeight * aspectRatio
+          }
+          newX = oldRight - newWidth
+        }
 
-        if (newWidth <= containerSize.width && newHeight <= containerSize.height) {
+        if (newWidth >= 50 && newHeight >= 50 && newX >= 0 && newY >= 0 && 
+            newX + newWidth <= rect.width && newY + newHeight <= rect.height) {
           setCropBoxSize({ width: newWidth, height: newHeight })
+          setCropBoxPosition({ x: newX, y: newY })
           setDragStart({ x: e.clientX, y: e.clientY })
         }
       }
@@ -244,7 +346,7 @@ export default function CropperPage() {
       window.removeEventListener("mousemove", handleGlobalMouseMove)
       window.removeEventListener("mouseup", handleGlobalMouseUp)
     }
-  }, [isDraggingImage, isDraggingCropBox, isResizingCropBox, dragStart, containerSize, cropBoxSize, cropWidth, cropHeight])
+  }, [isDraggingImage, isDraggingCropBox, isResizingCropBox, dragStart, containerSize, cropBoxSize, cropBoxPosition, cropWidth, cropHeight, resizeHandle])
 
   const getBaseImageDisplaySize = () => {
     if (!imageLoaded || imageNaturalSize.width === 0) return { width: 0, height: 0 }
@@ -328,7 +430,7 @@ export default function CropperPage() {
     })
   }, [containerSize, imageLoaded])
 
-  const cropImage = async () => {
+  const cropAndDownloadImage = async () => {
     if (!previewUrl || !imageLoaded || !containerRef.current) return
 
     const img = new window.Image()
@@ -374,23 +476,19 @@ export default function CropperPage() {
         if (blob) {
           const url = URL.createObjectURL(blob)
           setCroppedUrl(url)
+          
+          const link = document.createElement("a")
+          link.href = url
+          const originalName = selectedFile?.name.split(".")[0] || "cropped"
+          link.download = `${originalName}-${cropWidth}x${cropHeight}.png`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
         }
       },
       "image/png",
       1.0,
     )
-  }
-
-  const downloadImage = () => {
-    if (!croppedUrl) return
-
-    const link = document.createElement("a")
-    link.href = croppedUrl
-    const originalName = selectedFile?.name.split(".")[0] || "cropped"
-    link.download = `${originalName}-${cropWidth}x${cropHeight}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
   const reset = () => {
@@ -529,8 +627,20 @@ export default function CropperPage() {
                     onMouseDown={handleCropBoxMouseDown}
                   >
                     <div
+                      className="absolute -left-1 -top-1 w-4 h-4 bg-[#CCADAC] border-2 border-white cursor-nwse-resize"
+                      onMouseDown={(e) => handleResizeHandleMouseDown(e, "top-left")}
+                    />
+                    <div
+                      className="absolute -right-1 -top-1 w-4 h-4 bg-[#CCADAC] border-2 border-white cursor-nesw-resize"
+                      onMouseDown={(e) => handleResizeHandleMouseDown(e, "top-right")}
+                    />
+                    <div
+                      className="absolute -left-1 -bottom-1 w-4 h-4 bg-[#CCADAC] border-2 border-white cursor-nesw-resize"
+                      onMouseDown={(e) => handleResizeHandleMouseDown(e, "bottom-left")}
+                    />
+                    <div
                       className="absolute -right-1 -bottom-1 w-4 h-4 bg-[#CCADAC] border-2 border-white cursor-nwse-resize"
-                      onMouseDown={handleResizeHandleMouseDown}
+                      onMouseDown={(e) => handleResizeHandleMouseDown(e, "bottom-right")}
                     />
                     <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full px-2 py-1 bg-black/80 text-white text-xs font-sans whitespace-nowrap mt-1">
                       {cropWidth} × {cropHeight}px
@@ -538,39 +648,27 @@ export default function CropperPage() {
                   </div>
                 </div>
                 <p className="text-white/40 font-sans text-xs mt-2 text-center">
-                  Drag image to move • Drag crop box to reposition • Drag corner to resize
+                  Drag image to move • Drag crop box to reposition • Drag any corner to resize
                 </p>
               </div>
 
-              {!croppedUrl ? (
+              <div className="space-y-4">
                 <Button
-                  onClick={cropImage}
+                  onClick={cropAndDownloadImage}
                   disabled={!imageLoaded}
                   className="w-full bg-[#CCADAC] hover:bg-[#CCADAC]/80 text-black font-sans text-lg py-6"
                 >
-                  Crop Image
+                  <Download className="w-5 h-5 mr-2" />
+                  Download Cropped Image
                 </Button>
-              ) : (
-                <div className="space-y-4">
-                  <div className="p-4 bg-[#CCADAC]/20 border border-[#CCADAC] rounded-lg">
-                    <p className="text-[#CCADAC] font-sans font-medium">Crop complete!</p>
-                  </div>
-                  <Button
-                    onClick={downloadImage}
-                    className="w-full bg-[#CCADAC] hover:bg-[#CCADAC]/80 text-black font-sans text-lg py-6"
-                  >
-                    <Download className="w-5 h-5 mr-2" />
-                    Download Cropped Image
-                  </Button>
-                  <Button
-                    onClick={reset}
-                    variant="outline"
-                    className="w-full border-white/20 hover:bg-white/10 font-sans bg-transparent"
-                  >
-                    Crop Another Image
-                  </Button>
-                </div>
-              )}
+                <Button
+                  onClick={reset}
+                  variant="outline"
+                  className="w-full border-white/20 hover:bg-white/10 font-sans bg-transparent"
+                >
+                  Crop Another Image
+                </Button>
+              </div>
             </div>
           </div>
         )}
