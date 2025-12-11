@@ -1,9 +1,11 @@
 import Link from "next/link"
+import Image from "next/image"
 
 export function Footer() {
     return (
       <div className="mt-12 pt-12 border-t border-white/10 flex justify-between items-center">
-        <Link target="_blank" href="https://www.laurenskosters.nl/">
+        <Link className="flex items-center gap-4" target="_blank" href="https://www.laurenskosters.nl/">
+          <Image src="/logo.png" alt="Laurens Kosters" width={40} height={40} />
             Made by Laurens Kosters
         </Link>
         <div>
