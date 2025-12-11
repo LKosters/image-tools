@@ -25,6 +25,7 @@ export default function CropperPage() {
   const [previousZoom, setPreviousZoom] = useState<number>(100)
   const [cropBoxPosition, setCropBoxPosition] = useState({ x: 0, y: 0 })
   const [cropBoxSize, setCropBoxSize] = useState({ width: 400, height: 300 })
+  const [baseCropBoxSize, setBaseCropBoxSize] = useState({ width: 400, height: 300 })
   const [isDraggingImage, setIsDraggingImage] = useState(false)
   const [isDraggingCropBox, setIsDraggingCropBox] = useState(false)
   const [isResizingCropBox, setIsResizingCropBox] = useState(false)
@@ -124,13 +125,23 @@ export default function CropperPage() {
       const boxWidth = maxSize
       const boxHeight = boxWidth / aspectRatio
 
-      setCropBoxSize({ width: boxWidth, height: boxHeight })
-      setCropBoxPosition({
-        x: (containerSize.width - boxWidth) / 2,
-        y: (containerSize.height - boxHeight) / 2,
+      setBaseCropBoxSize((prev) => {
+        if (prev.width === 400 && prev.height === 300) {
+          return { width: boxWidth, height: boxHeight }
+        }
+        return prev
+      })
+      
+      setCropBoxSize((prev) => {
+        const newScaledWidth = boxWidth * (zoom / 100)
+        const newScaledHeight = boxHeight * (zoom / 100)
+        if (prev.width === 400 && prev.height === 300) {
+          return { width: newScaledWidth, height: newScaledHeight }
+        }
+        return prev
       })
     }
-  }, [cropWidth, cropHeight, imageLoaded, containerSize])
+  }, [cropWidth, cropHeight, imageLoaded, containerSize, zoom])
 
   const getImageDisplaySize = () => {
     if (!imageLoaded || imageNaturalSize.width === 0) return { width: 0, height: 0 }
@@ -190,56 +201,58 @@ export default function CropperPage() {
       const deltaX = e.clientX - dragStart.x
       const deltaY = e.clientY - dragStart.y
       
-      let newWidth = cropBoxSize.width
-      let newHeight = cropBoxSize.height
+      const currentBaseWidth = baseCropBoxSize.width
+      const currentBaseHeight = baseCropBoxSize.height
+      const scale = zoom / 100
+      const currentScaledWidth = currentBaseWidth * scale
+      const currentScaledHeight = currentBaseHeight * scale
+      
+      let newBaseWidth = currentBaseWidth
+      let newBaseHeight = currentBaseHeight
       let newX = cropBoxPosition.x
       let newY = cropBoxPosition.y
 
       if (resizeHandle === "bottom-right") {
         const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
-        newWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, cropBoxSize.width + delta))
-        newHeight = newWidth / aspectRatio
-        if (newHeight > containerSize.height - cropBoxPosition.y) {
-          newHeight = containerSize.height - cropBoxPosition.y
-          newWidth = newHeight * aspectRatio
-        }
+        const newScaledWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, currentScaledWidth + delta))
+        const newScaledHeight = newScaledWidth / aspectRatio
+        newBaseWidth = newScaledWidth / scale
+        newBaseHeight = newScaledHeight / scale
       } else if (resizeHandle === "top-left") {
         const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY < 0 ? -1 : 1)
-        const oldRight = cropBoxPosition.x + cropBoxSize.width
-        const oldBottom = cropBoxPosition.y + cropBoxSize.height
-        newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
-        newHeight = newWidth / aspectRatio
-        if (newHeight > oldBottom) {
-          newHeight = oldBottom
-          newWidth = newHeight * aspectRatio
-        }
-        newX = oldRight - newWidth
-        newY = oldBottom - newHeight
+        const oldRight = cropBoxPosition.x + currentScaledWidth
+        const oldBottom = cropBoxPosition.y + currentScaledHeight
+        const newScaledWidth = Math.max(50, Math.min(oldRight, currentScaledWidth - delta))
+        const newScaledHeight = newScaledWidth / aspectRatio
+        newBaseWidth = newScaledWidth / scale
+        newBaseHeight = newScaledHeight / scale
+        newX = oldRight - newScaledWidth
+        newY = oldBottom - newScaledHeight
       } else if (resizeHandle === "top-right") {
         const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY < 0 ? 1 : -1)
-        const oldBottom = cropBoxPosition.y + cropBoxSize.height
-        newWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, cropBoxSize.width + delta))
-        newHeight = newWidth / aspectRatio
-        if (newHeight > oldBottom) {
-          newHeight = oldBottom
-          newWidth = newHeight * aspectRatio
-        }
-        newY = oldBottom - newHeight
+        const oldBottom = cropBoxPosition.y + currentScaledHeight
+        const newScaledWidth = Math.max(50, Math.min(containerSize.width - cropBoxPosition.x, currentScaledWidth + delta))
+        const newScaledHeight = newScaledWidth / aspectRatio
+        newBaseWidth = newScaledWidth / scale
+        newBaseHeight = newScaledHeight / scale
+        newY = oldBottom - newScaledHeight
       } else if (resizeHandle === "bottom-left") {
         const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY > 0 ? -1 : 1)
-        const oldRight = cropBoxPosition.x + cropBoxSize.width
-        newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
-        newHeight = newWidth / aspectRatio
-        if (newHeight > containerSize.height - cropBoxPosition.y) {
-          newHeight = containerSize.height - cropBoxPosition.y
-          newWidth = newHeight * aspectRatio
-        }
-        newX = oldRight - newWidth
+        const oldRight = cropBoxPosition.x + currentScaledWidth
+        const newScaledWidth = Math.max(50, Math.min(oldRight, currentScaledWidth - delta))
+        const newScaledHeight = newScaledWidth / aspectRatio
+        newBaseWidth = newScaledWidth / scale
+        newBaseHeight = newScaledHeight / scale
+        newX = oldRight - newScaledWidth
       }
 
-      if (newWidth >= 50 && newHeight >= 50 && newX >= 0 && newY >= 0 && 
-          newX + newWidth <= containerSize.width && newY + newHeight <= containerSize.height) {
-        setCropBoxSize({ width: newWidth, height: newHeight })
+      const newScaledWidth = newBaseWidth * scale
+      const newScaledHeight = newBaseHeight * scale
+
+      if (newScaledWidth >= 50 && newScaledHeight >= 50 && newX >= 0 && newY >= 0 && 
+          newX + newScaledWidth <= containerSize.width && newY + newScaledHeight <= containerSize.height) {
+        setBaseCropBoxSize({ width: newBaseWidth, height: newBaseHeight })
+        setCropBoxSize({ width: newScaledWidth, height: newScaledHeight })
         setCropBoxPosition({ x: newX, y: newY })
         setDragStart({ x: e.clientX, y: e.clientY })
       }
@@ -276,56 +289,58 @@ export default function CropperPage() {
         const deltaX = e.clientX - dragStart.x
         const deltaY = e.clientY - dragStart.y
         
-        let newWidth = cropBoxSize.width
-        let newHeight = cropBoxSize.height
+        const currentBaseWidth = baseCropBoxSize.width
+        const currentBaseHeight = baseCropBoxSize.height
+        const scale = zoom / 100
+        const currentScaledWidth = currentBaseWidth * scale
+        const currentScaledHeight = currentBaseHeight * scale
+        
+        let newBaseWidth = currentBaseWidth
+        let newBaseHeight = currentBaseHeight
         let newX = cropBoxPosition.x
         let newY = cropBoxPosition.y
 
         if (resizeHandle === "bottom-right") {
           const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY > 0 ? 1 : -1)
-          newWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, cropBoxSize.width + delta))
-          newHeight = newWidth / aspectRatio
-          if (newHeight > rect.height - cropBoxPosition.y) {
-            newHeight = rect.height - cropBoxPosition.y
-            newWidth = newHeight * aspectRatio
-          }
+          const newScaledWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, currentScaledWidth + delta))
+          const newScaledHeight = newScaledWidth / aspectRatio
+          newBaseWidth = newScaledWidth / scale
+          newBaseHeight = newScaledHeight / scale
         } else if (resizeHandle === "top-left") {
           const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY < 0 ? -1 : 1)
-          const oldRight = cropBoxPosition.x + cropBoxSize.width
-          const oldBottom = cropBoxPosition.y + cropBoxSize.height
-          newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
-          newHeight = newWidth / aspectRatio
-          if (newHeight > oldBottom) {
-            newHeight = oldBottom
-            newWidth = newHeight * aspectRatio
-          }
-          newX = oldRight - newWidth
-          newY = oldBottom - newHeight
+          const oldRight = cropBoxPosition.x + currentScaledWidth
+          const oldBottom = cropBoxPosition.y + currentScaledHeight
+          const newScaledWidth = Math.max(50, Math.min(oldRight, currentScaledWidth - delta))
+          const newScaledHeight = newScaledWidth / aspectRatio
+          newBaseWidth = newScaledWidth / scale
+          newBaseHeight = newScaledHeight / scale
+          newX = oldRight - newScaledWidth
+          newY = oldBottom - newScaledHeight
         } else if (resizeHandle === "top-right") {
           const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX > 0 || deltaY < 0 ? 1 : -1)
-          const oldBottom = cropBoxPosition.y + cropBoxSize.height
-          newWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, cropBoxSize.width + delta))
-          newHeight = newWidth / aspectRatio
-          if (newHeight > oldBottom) {
-            newHeight = oldBottom
-            newWidth = newHeight * aspectRatio
-          }
-          newY = oldBottom - newHeight
+          const oldBottom = cropBoxPosition.y + currentScaledHeight
+          const newScaledWidth = Math.max(50, Math.min(rect.width - cropBoxPosition.x, currentScaledWidth + delta))
+          const newScaledHeight = newScaledWidth / aspectRatio
+          newBaseWidth = newScaledWidth / scale
+          newBaseHeight = newScaledHeight / scale
+          newY = oldBottom - newScaledHeight
         } else if (resizeHandle === "bottom-left") {
           const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY)) * (deltaX < 0 || deltaY > 0 ? -1 : 1)
-          const oldRight = cropBoxPosition.x + cropBoxSize.width
-          newWidth = Math.max(50, Math.min(oldRight, cropBoxSize.width - delta))
-          newHeight = newWidth / aspectRatio
-          if (newHeight > rect.height - cropBoxPosition.y) {
-            newHeight = rect.height - cropBoxPosition.y
-            newWidth = newHeight * aspectRatio
-          }
-          newX = oldRight - newWidth
+          const oldRight = cropBoxPosition.x + currentScaledWidth
+          const newScaledWidth = Math.max(50, Math.min(oldRight, currentScaledWidth - delta))
+          const newScaledHeight = newScaledWidth / aspectRatio
+          newBaseWidth = newScaledWidth / scale
+          newBaseHeight = newScaledHeight / scale
+          newX = oldRight - newScaledWidth
         }
 
-        if (newWidth >= 50 && newHeight >= 50 && newX >= 0 && newY >= 0 && 
-            newX + newWidth <= rect.width && newY + newHeight <= rect.height) {
-          setCropBoxSize({ width: newWidth, height: newHeight })
+        const newScaledWidth = newBaseWidth * scale
+        const newScaledHeight = newBaseHeight * scale
+
+        if (newScaledWidth >= 50 && newScaledHeight >= 50 && newX >= 0 && newY >= 0 && 
+            newX + newScaledWidth <= rect.width && newY + newScaledHeight <= rect.height) {
+          setBaseCropBoxSize({ width: newBaseWidth, height: newBaseHeight })
+          setCropBoxSize({ width: newScaledWidth, height: newScaledHeight })
           setCropBoxPosition({ x: newX, y: newY })
           setDragStart({ x: e.clientX, y: e.clientY })
         }
@@ -371,8 +386,26 @@ export default function CropperPage() {
 
   const handleZoomChange = (value: number[]) => {
     const newZoom = value[0]
+    const oldZoom = zoom
     setZoom(newZoom)
     setPreviousZoom(newZoom)
+    
+    const scale = newZoom / oldZoom
+    const newScaledWidth = baseCropBoxSize.width * (newZoom / 100)
+    const newScaledHeight = baseCropBoxSize.height * (newZoom / 100)
+    
+    const currentCenterX = cropBoxPosition.x + cropBoxSize.width / 2
+    const currentCenterY = cropBoxPosition.y + cropBoxSize.height / 2
+    
+    setCropBoxSize({
+      width: newScaledWidth,
+      height: newScaledHeight,
+    })
+    
+    setCropBoxPosition({
+      x: currentCenterX - newScaledWidth / 2,
+      y: currentCenterY - newScaledHeight / 2,
+    })
   }
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -382,12 +415,30 @@ export default function CropperPage() {
     e.stopPropagation()
 
     const delta = e.deltaY > 0 ? -5 : 5
+    const oldZoom = zoom
     const newZoom = Math.max(50, Math.min(200, zoom + delta))
     
-    if (newZoom === zoom) return
+    if (newZoom === oldZoom) return
 
+    const scale = newZoom / oldZoom
+    const newScaledWidth = baseCropBoxSize.width * (newZoom / 100)
+    const newScaledHeight = baseCropBoxSize.height * (newZoom / 100)
+    
+    const currentCenterX = cropBoxPosition.x + cropBoxSize.width / 2
+    const currentCenterY = cropBoxPosition.y + cropBoxSize.height / 2
+    
     setZoom(newZoom)
     setPreviousZoom(newZoom)
+    
+    setCropBoxSize({
+      width: newScaledWidth,
+      height: newScaledHeight,
+    })
+    
+    setCropBoxPosition({
+      x: currentCenterX - newScaledWidth / 2,
+      y: currentCenterY - newScaledHeight / 2,
+    })
   }
 
   useEffect(() => {
@@ -724,7 +775,13 @@ export default function CropperPage() {
                   }}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
+                  onMouseLeave={(e) => {
+                    handleMouseUp()
+                    document.body.style.overflow = ""
+                  }}
+                  onMouseEnter={() => {
+                    document.body.style.overflow = "hidden"
+                  }}
                   onWheel={handleWheel}
                 >
                   {previewUrl && (
