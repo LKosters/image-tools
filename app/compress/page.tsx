@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useCallback } from "react"
 import { Download, X } from "lucide-react"
+import imageCompression from "browser-image-compression"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/header"
 import { NavigationTabs } from "@/components/navigation-tabs"
@@ -59,72 +60,36 @@ export default function CompressPage() {
   }
 
   const compressImageFile = async (file: File): Promise<CompressedImage> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const img = new window.Image()
-        img.crossOrigin = "anonymous"
+    const originalUrl = URL.createObjectURL(file)
 
-        img.onload = () => {
-          const canvas = document.createElement("canvas")
+    const isPNG = file.type === "image/png"
+    const options = {
+      maxSizeMB: 5,
+      maxWidthOrHeight: undefined,
+      useWebWorker: true,
+      fileType: isPNG ? "image/jpeg" : file.type,
+      initialQuality: isPNG ? 0.92 : 0.88,
+      alwaysKeepResolution: true,
+      exifOrientation: 1,
+    }
 
-          let width = img.width
-          let height = img.height
-          const maxDimension = 2000
+    try {
+      const compressedFile = await imageCompression(file, options)
+      const compressedUrl = URL.createObjectURL(compressedFile)
+      const compressionRatio = ((1 - compressedFile.size / file.size) * 100).toFixed(1)
 
-          if (width > maxDimension || height > maxDimension) {
-            if (width > height) {
-              height = (height / width) * maxDimension
-              width = maxDimension
-            } else {
-              width = (width / height) * maxDimension
-              height = maxDimension
-            }
-          }
-
-          canvas.width = width
-          canvas.height = height
-
-          const ctx = canvas.getContext("2d")
-          if (!ctx) {
-            reject(new Error("Could not get canvas context"))
-            return
-          }
-
-          ctx.imageSmoothingEnabled = true
-          ctx.imageSmoothingQuality = "high"
-          ctx.drawImage(img, 0, 0, width, height)
-
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                const compressedUrl = URL.createObjectURL(blob)
-                const compressionRatio = ((1 - blob.size / file.size) * 100).toFixed(1)
-
-                resolve({
-                  file,
-                  originalUrl: e.target?.result as string,
-                  compressedUrl,
-                  originalSize: file.size,
-                  compressedSize: blob.size,
-                  compressionRatio: Number.parseFloat(compressionRatio),
-                })
-              } else {
-                reject(new Error("Failed to compress image"))
-              }
-            },
-            "image/webp",
-            0.82,
-          )
-        }
-
-        img.onerror = () => reject(new Error("Failed to load image"))
-        img.src = e.target?.result as string
+      return {
+        file,
+        originalUrl,
+        compressedUrl,
+        originalSize: file.size,
+        compressedSize: compressedFile.size,
+        compressionRatio: Number.parseFloat(compressionRatio),
       }
-
-      reader.onerror = () => reject(new Error("Failed to read file"))
-      reader.readAsDataURL(file)
-    })
+    } catch (error) {
+      URL.revokeObjectURL(originalUrl)
+      throw error
+    }
   }
 
   const compressImages = async () => {
@@ -152,7 +117,9 @@ export default function CompressPage() {
     const link = document.createElement("a")
     link.href = image.compressedUrl
     const originalName = image.file.name.split(".")[0]
-    link.download = `${originalName}-compressed.webp`
+    const isPNG = image.file.type === "image/png"
+    const ext = isPNG ? "jpg" : image.file.name.split(".").pop() || "jpg"
+    link.download = `${originalName}-compressed.${ext}`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
