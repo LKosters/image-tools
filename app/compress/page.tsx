@@ -11,6 +11,8 @@ import { USPs } from "@/components/usps"
 import { Footer } from "@/components/footer"
 import { UploadArea } from "@/components/upload-area"
 
+type OutputFormat = "original" | "webp" | "png" | "avif"
+
 interface CompressedImage {
   file: File
   originalUrl: string
@@ -25,6 +27,7 @@ export default function CompressPage() {
   const [compressedImages, setCompressedImages] = useState<CompressedImage[]>([])
   const [compressionProgress, setCompressionProgress] = useState(0)
   const [isCompressing, setIsCompressing] = useState(false)
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>("original")
   const [dragActive, setDragActive] = useState(false)
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -59,16 +62,28 @@ export default function CompressPage() {
     }
   }
 
+  const getFileType = (file: File): string => {
+    if (outputFormat === "original") return file.type
+    return `image/${outputFormat}`
+  }
+
+  const getQuality = (file: File): number => {
+    if (outputFormat === "original") {
+      return file.type === "image/png" ? 0.92 : 0.88
+    }
+    if (outputFormat === "png") return 0.92
+    return 0.88
+  }
+
   const compressImageFile = async (file: File): Promise<CompressedImage> => {
     const originalUrl = URL.createObjectURL(file)
 
-    const isPNG = file.type === "image/png"
     const options = {
       maxSizeMB: 5,
       maxWidthOrHeight: undefined,
       useWebWorker: true,
-      fileType: isPNG ? "image/jpeg" : file.type,
-      initialQuality: isPNG ? 0.92 : 0.88,
+      fileType: getFileType(file),
+      initialQuality: getQuality(file),
       alwaysKeepResolution: true,
       exifOrientation: 1,
     }
@@ -113,12 +128,18 @@ export default function CompressPage() {
     setIsCompressing(false)
   }
 
+  const getExtension = (file: File): string => {
+    if (outputFormat === "original") {
+      return file.name.split(".").pop() || "jpg"
+    }
+    return outputFormat
+  }
+
   const downloadCompressedImage = (image: CompressedImage) => {
     const link = document.createElement("a")
     link.href = image.compressedUrl
     const originalName = image.file.name.split(".")[0]
-    const isPNG = image.file.type === "image/png"
-    const ext = isPNG ? "jpg" : image.file.name.split(".").pop() || "jpg"
+    const ext = getExtension(image.file)
     link.download = `${originalName}-compressed.${ext}`
     document.body.appendChild(link)
     link.click()
@@ -225,6 +246,27 @@ export default function CompressPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {compressedImages.length === 0 && !isCompressing && (
+                <div className="mb-6">
+                  <label className="block font-serif text-xl mb-4">Output format:</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {(["original", "webp", "png", "avif"] as OutputFormat[]).map((format) => (
+                      <button
+                        key={format}
+                        onClick={() => setOutputFormat(format)}
+                        className={`py-3 px-4 rounded font-sans font-medium transition-colors ${
+                          outputFormat === format
+                            ? "bg-[#13947D] text-white"
+                            : "bg-white/10 hover:bg-white/20 text-white"
+                        }`}
+                      >
+                        {format === "original" ? "Same as input" : format.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
