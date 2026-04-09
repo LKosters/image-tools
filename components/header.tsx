@@ -44,7 +44,7 @@ export function Header({ activeTab }: HeaderProps) {
   }, [activeTab])
 
   return (
-    <div ref={wrapRef} className="relative pt-10 pb-6 md:pt-20 md:pb-10">
+    <div ref={wrapRef} className="relative pt-6 pb-4 md:pt-10 md:pb-6">
       <div ref={orb1} className="absolute -top-24 -left-24 w-[320px] h-[320px] md:w-[500px] md:h-[500px] rounded-full opacity-0 pointer-events-none blur-[80px] md:blur-[120px]" style={{ background: `radial-gradient(circle, ${color}25 0%, transparent 70%)` }} />
       <div ref={orb2} className="absolute -bottom-32 -right-32 w-[280px] h-[280px] md:w-[400px] md:h-[400px] rounded-full opacity-0 pointer-events-none blur-[80px] md:blur-[120px]" style={{ background: `radial-gradient(circle, ${color}15 0%, transparent 70%)` }} />
 

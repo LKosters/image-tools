@@ -6,8 +6,9 @@ import { Download, X, Minimize } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Header } from "@/components/header"
-import { NavigationTabs } from "@/components/navigation-tabs"
+
 import { USPs } from "@/components/usps"
+import { USPCard, features } from "@/components/usps"
 import { Footer } from "@/components/footer"
 import { UploadArea } from "@/components/upload-area"
 import { Slider } from "@/components/ui/slider"
@@ -237,11 +238,22 @@ export default function CropperPage() {
     <main className="min-h-screen overflow-x-hidden" style={{ background: "#06060B", color: "#EEEEF2" }}>
       <div className="mx-auto max-w-5xl px-4 md:px-10">
         <Header activeTab="cropper" />
-        <NavigationTabs />
 
         {!selectedFile ? (
-          <UploadArea mode="cropper" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
+          /* Bento grid — upload state */
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 md:[grid-template-rows:1fr_1fr_auto] mb-10 md:mb-16" style={{ perspective: "1000px" }}>
+            <div className="md:col-span-2 md:row-span-2 [&>div]:h-full">
+              <UploadArea mode="cropper" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
+            </div>
+            <USPCard feature={features[0]} index={0} className="h-full" />
+            <USPCard feature={features[1]} index={1} className="h-full" />
+            <USPCard feature={features[2]} index={2} className="h-full" />
+            <div className="md:col-span-2 rounded-2xl" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
+              <Footer compact />
+            </div>
+          </div>
         ) : (
+          /* Working state */
           <div ref={panelRef} className="opacity-0">
             <div className="relative rounded-3xl overflow-hidden" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
               {/* Giant ghost number */}
@@ -338,8 +350,12 @@ export default function CropperPage() {
           </div>
         )}
 
-        <USPs />
-        <Footer />
+        {selectedFile && (
+          <>
+            <USPs />
+            <Footer />
+          </>
+        )}
       </div>
     </main>
   )

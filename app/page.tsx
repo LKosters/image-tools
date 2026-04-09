@@ -4,8 +4,9 @@ import type React from "react"
 import { useState, useCallback, useEffect, useRef } from "react"
 import { Download, X, ArrowRight } from "lucide-react"
 import { Header } from "@/components/header"
-import { NavigationTabs } from "@/components/navigation-tabs"
+
 import { USPs } from "@/components/usps"
+import { USPCard, features } from "@/components/usps"
 import { Footer } from "@/components/footer"
 import { UploadArea } from "@/components/upload-area"
 import gsap from "gsap"
@@ -83,11 +84,25 @@ export default function Home() {
     <main className="min-h-screen overflow-x-hidden" style={{ background: "#06060B", color: "#EEEEF2" }}>
       <div className="mx-auto max-w-5xl px-4 md:px-10">
         <Header activeTab="convert" />
-        <NavigationTabs />
 
         {!selectedFile ? (
-          <UploadArea mode="convert" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
+          /* Bento grid — upload state */
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 md:[grid-template-rows:1fr_1fr_auto] mb-10 md:mb-16" style={{ perspective: "1000px" }}>
+            {/* Upload area: 2 cols, 2 rows */}
+            <div className="md:col-span-2 md:row-span-2 [&>div]:h-full">
+              <UploadArea mode="convert" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
+            </div>
+            {/* USP cards */}
+            <USPCard feature={features[0]} index={0} className="h-full" />
+            <USPCard feature={features[1]} index={1} className="h-full" />
+            {/* Bottom row */}
+            <USPCard feature={features[2]} index={2} className="h-full" />
+            <div className="md:col-span-2 rounded-2xl" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
+              <Footer compact />
+            </div>
+          </div>
         ) : (
+          /* Working state */
           <div ref={panelRef} className="opacity-0">
             <div className="relative rounded-3xl overflow-hidden" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
               {/* Giant ghost number */}
@@ -163,8 +178,12 @@ export default function Home() {
           </div>
         )}
 
-        <USPs />
-        <Footer />
+        {selectedFile && (
+          <>
+            <USPs />
+            <Footer />
+          </>
+        )}
       </div>
     </main>
   )
