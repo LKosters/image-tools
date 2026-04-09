@@ -4,23 +4,65 @@ import type React from "react"
 import { useState, useCallback, useEffect, useRef } from "react"
 import { Download, X, ArrowRight } from "lucide-react"
 import { Header } from "@/components/header"
-
 import { USPs } from "@/components/usps"
 import { USPCard, features } from "@/components/usps"
 import { Footer } from "@/components/footer"
 import { UploadArea } from "@/components/upload-area"
 import gsap from "gsap"
 
-type ImageFormat = "png" | "jpeg" | "webp" | "bmp" | "gif"
-const C = "#7C3AED"
+const C = "#F59E0B"
+const SIZES = [16, 32, 48, 64, 128, 256] as const
 
-export default function Home() {
+function buildIco(pngBlobs: { size: number; data: Uint8Array }[]): Blob {
+  const count = pngBlobs.length
+  const headerSize = 6
+  const entrySize = 16
+  const dirSize = headerSize + entrySize * count
+  let totalSize = dirSize
+  for (const b of pngBlobs) totalSize += b.data.byteLength
+
+  const buf = new ArrayBuffer(totalSize)
+  const view = new DataView(buf)
+
+  // ICONDIR header
+  view.setUint16(0, 0, true)      // reserved
+  view.setUint16(2, 1, true)      // type = ICO
+  view.setUint16(4, count, true)  // image count
+
+  let dataOffset = dirSize
+  for (let i = 0; i < count; i++) {
+    const { size, data } = pngBlobs[i]
+    const entryOffset = headerSize + i * entrySize
+    // width & height: 0 means 256
+    view.setUint8(entryOffset, size >= 256 ? 0 : size)
+    view.setUint8(entryOffset + 1, size >= 256 ? 0 : size)
+    view.setUint8(entryOffset + 2, 0)  // color palette
+    view.setUint8(entryOffset + 3, 0)  // reserved
+    view.setUint16(entryOffset + 4, 1, true)  // color planes
+    view.setUint16(entryOffset + 6, 32, true) // bits per pixel
+    view.setUint32(entryOffset + 8, data.byteLength, true)  // image data size
+    view.setUint32(entryOffset + 12, dataOffset, true)       // image data offset
+    dataOffset += data.byteLength
+  }
+
+  // Write PNG data
+  const bytes = new Uint8Array(buf)
+  let offset = dirSize
+  for (const { data } of pngBlobs) {
+    bytes.set(data, offset)
+    offset += data.byteLength
+  }
+
+  return new Blob([buf], { type: "image/x-icon" })
+}
+
+export default function FaviconPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string>("")
-  const [outputFormat, setOutputFormat] = useState<ImageFormat>("png")
-  const [convertedUrl, setConvertedUrl] = useState<string>("")
-  const [isConverting, setIsConverting] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [selectedSizes, setSelectedSizes] = useState<Set<number>>(new Set(SIZES))
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [icoUrl, setIcoUrl] = useState<string>("")
   const panelRef = useRef<HTMLDivElement>(null)
   const successRef = useRef<HTMLDivElement>(null)
 
@@ -37,7 +79,7 @@ export default function Home() {
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith("image/")) { alert("Please select an image file"); return }
-    setSelectedFile(file); setConvertedUrl("")
+    setSelectedFile(file); setIcoUrl(""); setSelectedSizes(new Set(SIZES))
     const reader = new FileReader()
     reader.onload = (e) => setPreviewUrl(e.target?.result as string)
     reader.readAsDataURL(file)
@@ -52,61 +94,89 @@ export default function Home() {
   }, [selectedFile])
 
   useEffect(() => {
-    if (!convertedUrl || !successRef.current) return
+    if (!icoUrl || !successRef.current) return
     const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches; if (rm) return
     gsap.fromTo(successRef.current, { y: 20, opacity: 0, scale: 0.95 }, { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.4)" })
-  }, [convertedUrl])
+  }, [icoUrl])
 
-  const convertImage = async () => {
-    if (!selectedFile || !previewUrl) return
-    setIsConverting(true)
-    try {
-      const img = new window.Image(); img.crossOrigin = "anonymous"
-      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = previewUrl })
-      const canvas = document.createElement("canvas"); canvas.width = img.width; canvas.height = img.height
-      const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("No ctx"); ctx.drawImage(img, 0, 0)
-      const mimeType = `image/${outputFormat === "jpeg" ? "jpeg" : outputFormat}`
-      const quality = outputFormat === "jpeg" ? 0.95 : undefined
-      canvas.toBlob((blob) => { if (blob) setConvertedUrl(URL.createObjectURL(blob)); setIsConverting(false) }, mimeType, quality)
-    } catch { alert("Error converting image."); setIsConverting(false) }
+  const toggleSize = (size: number) => {
+    setSelectedSizes((prev) => {
+      const next = new Set(prev)
+      if (next.has(size)) { if (next.size > 1) next.delete(size) }
+      else next.add(size)
+      return next
+    })
   }
 
-  const downloadImage = () => {
-    if (!convertedUrl) return
-    const link = document.createElement("a"); link.href = convertedUrl
-    link.download = `${selectedFile?.name.split(".")[0] || "converted"}.${outputFormat}`
+  const renderToBlob = (img: HTMLImageElement, size: number): Promise<Uint8Array> => {
+    return new Promise((resolve, reject) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = size; canvas.height = size
+      const ctx = canvas.getContext("2d")
+      if (!ctx) { reject(new Error("No canvas context")); return }
+      ctx.drawImage(img, 0, 0, size, size)
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("Blob creation failed")); return }
+        blob.arrayBuffer().then((ab) => resolve(new Uint8Array(ab))).catch(reject)
+      }, "image/png")
+    })
+  }
+
+  const generateFavicon = async () => {
+    if (!previewUrl || selectedSizes.size === 0) return
+    setIsGenerating(true)
+    try {
+      const img = new window.Image(); img.crossOrigin = "anonymous"
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = previewUrl })
+
+      const sizes = Array.from(selectedSizes).sort((a, b) => a - b)
+      const pngBlobs: { size: number; data: Uint8Array }[] = []
+      for (const size of sizes) {
+        const data = await renderToBlob(img, size)
+        pngBlobs.push({ size, data })
+      }
+
+      const ico = buildIco(pngBlobs)
+      setIcoUrl(URL.createObjectURL(ico))
+    } catch {
+      alert("Error generating favicon.")
+    }
+    setIsGenerating(false)
+  }
+
+  const downloadFavicon = () => {
+    if (!icoUrl) return
+    const link = document.createElement("a"); link.href = icoUrl
+    link.download = "favicon.ico"
     document.body.appendChild(link); link.click(); document.body.removeChild(link)
   }
 
-  const reset = () => { if (convertedUrl) URL.revokeObjectURL(convertedUrl); setSelectedFile(null); setPreviewUrl(""); setConvertedUrl("") }
+  const reset = () => {
+    if (icoUrl) URL.revokeObjectURL(icoUrl)
+    setSelectedFile(null); setPreviewUrl(""); setIcoUrl("")
+  }
 
   return (
     <main className="min-h-screen overflow-x-hidden" style={{ background: "#06060B", color: "#EEEEF2" }}>
       <div className="mx-auto max-w-5xl px-4 md:px-10">
-        <Header activeTab="convert" />
+        <Header activeTab="favicon" />
 
         {!selectedFile ? (
-          /* Bento grid — upload state */
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 md:[grid-template-rows:1fr_1fr_auto] mb-10 md:mb-16" style={{ perspective: "1000px" }}>
-            {/* Upload area: 2 cols, 2 rows */}
             <div className="md:col-span-2 md:row-span-2 [&>div]:h-full">
-              <UploadArea mode="convert" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
+              <UploadArea mode="favicon" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} />
             </div>
-            {/* USP cards */}
             <USPCard feature={features[0]} index={0} className="h-full" />
             <USPCard feature={features[1]} index={1} className="h-full" />
-            {/* Bottom row */}
             <USPCard feature={features[2]} index={2} className="h-full" />
             <div className="md:col-span-2 rounded-2xl" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
               <Footer compact />
             </div>
           </div>
         ) : (
-          /* Working state */
           <div ref={panelRef} className="opacity-0">
             <div className="relative rounded-3xl overflow-hidden" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
-              {/* Giant ghost number */}
-              <span className="absolute -top-6 -right-4 font-serif text-[10rem] md:text-[14rem] leading-none select-none pointer-events-none" style={{ color: `${C}06` }}>01</span>
+              <span className="absolute -top-6 -right-4 font-serif text-[10rem] md:text-[14rem] leading-none select-none pointer-events-none" style={{ color: `${C}06` }}>03</span>
 
               {/* Top bar */}
               <div className="relative z-10 flex items-center justify-between px-5 md:px-8 py-4 md:py-5" style={{ borderBottom: "1px solid #1A1A28" }}>
@@ -125,50 +195,53 @@ export default function Home() {
 
                 {/* Controls */}
                 <div className="p-5 md:p-10 flex flex-col justify-center">
-                  {!convertedUrl ? (
+                  {!icoUrl ? (
                     <>
-                      <h3 className="font-serif text-5xl md:text-6xl leading-[0.9] mb-2">Output</h3>
-                      <p className="font-serif text-sm mb-8" style={{ color: "#2a2a40" }}>pick a format</p>
+                      <h3 className="font-serif text-5xl md:text-6xl leading-[0.9] mb-2">Sizes</h3>
+                      <p className="font-serif text-sm mb-8" style={{ color: "#2a2a40" }}>pick your favicon sizes</p>
 
-                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-8">
-                        {(["png", "jpeg", "webp", "bmp", "gif"] as ImageFormat[]).map((fmt) => (
+                      <div className="grid grid-cols-3 gap-2 mb-8">
+                        {SIZES.map((size) => (
                           <button
-                            key={fmt}
-                            onClick={() => setOutputFormat(fmt)}
+                            key={size}
+                            onClick={() => toggleSize(size)}
                             className="py-3.5 rounded-xl font-serif text-base transition-all duration-200"
                             style={{
-                              background: outputFormat === fmt ? `${C}15` : "#06060B",
-                              border: `1px solid ${outputFormat === fmt ? `${C}50` : "#1A1A28"}`,
-                              color: outputFormat === fmt ? C : "#52525B",
-                              boxShadow: outputFormat === fmt ? `0 0 20px ${C}10` : "none",
+                              background: selectedSizes.has(size) ? `${C}15` : "#06060B",
+                              border: `1px solid ${selectedSizes.has(size) ? `${C}50` : "#1A1A28"}`,
+                              color: selectedSizes.has(size) ? C : "#52525B",
+                              boxShadow: selectedSizes.has(size) ? `0 0 20px ${C}10` : "none",
                             }}
                           >
-                            {fmt.toUpperCase()}
+                            {size}px
                           </button>
                         ))}
                       </div>
 
                       <button
-                        onClick={convertImage} disabled={isConverting}
+                        onClick={generateFavicon} disabled={isGenerating || selectedSizes.size === 0}
                         className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-serif text-xl transition-all duration-300 disabled:opacity-50"
                         style={{ background: C, color: "#06060B", boxShadow: `0 0 40px ${C}25` }}
                       >
-                        {isConverting
+                        {isGenerating
                           ? <span className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                          : <>Convert <ArrowRight className="w-5 h-5" /></>
+                          : <>Generate Favicon <ArrowRight className="w-5 h-5" /></>
                         }
                       </button>
                     </>
                   ) : (
                     <div ref={successRef} className="opacity-0">
                       <h3 className="font-serif text-5xl md:text-7xl leading-[0.9] mb-2" style={{ color: "#10B981" }}>Done</h3>
-                      <p className="font-serif text-lg mb-8" style={{ color: "#2a2a40" }}>your {outputFormat.toUpperCase()} is ready</p>
+                      <p className="font-serif text-lg mb-2" style={{ color: "#2a2a40" }}>your favicon.ico is ready</p>
+                      <p className="font-mono text-xs mb-8" style={{ color: "#3f3f50" }}>
+                        {Array.from(selectedSizes).sort((a, b) => a - b).map((s) => `${s}px`).join(" \u00b7 ")}
+                      </p>
 
-                      <button onClick={downloadImage} className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-serif text-xl mb-3 transition-all duration-300" style={{ background: "#10B981", color: "#06060B", boxShadow: "0 0 40px #10B98125" }}>
-                        <Download className="w-5 h-5" /> Download
+                      <button onClick={downloadFavicon} className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-serif text-xl mb-3 transition-all duration-300" style={{ background: "#10B981", color: "#06060B", boxShadow: "0 0 40px #10B98125" }}>
+                        <Download className="w-5 h-5" /> Download .ico
                       </button>
                       <button onClick={reset} className="w-full py-4 rounded-2xl font-serif text-base transition-colors" style={{ border: "1px solid #1A1A28", color: "#2a2a40" }}>
-                        Convert another
+                        Generate another
                       </button>
                     </div>
                   )}
