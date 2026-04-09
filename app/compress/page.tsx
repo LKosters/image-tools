@@ -1,15 +1,16 @@
 "use client"
 
 import type React from "react"
-import { useState, useCallback } from "react"
-import { Download, X } from "lucide-react"
+import { useState, useCallback, useEffect, useRef } from "react"
+import { Download, X, Eye, ArrowRight } from "lucide-react"
 import imageCompression from "browser-image-compression"
-import { Button } from "@/components/ui/button"
 import { Header } from "@/components/header"
 import { NavigationTabs } from "@/components/navigation-tabs"
 import { USPs } from "@/components/usps"
 import { Footer } from "@/components/footer"
 import { UploadArea } from "@/components/upload-area"
+import { Slider } from "@/components/ui/slider"
+import gsap from "gsap"
 
 interface CompressedImage {
   file: File
@@ -20,242 +21,235 @@ interface CompressedImage {
   compressionRatio: number
 }
 
+const C = "#10B981" // emerald
+
 export default function CompressPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [compressedImages, setCompressedImages] = useState<CompressedImage[]>([])
   const [compressionProgress, setCompressionProgress] = useState(0)
   const [isCompressing, setIsCompressing] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [convertToWebP, setConvertToWebP] = useState(false)
+  const [quality, setQuality] = useState(80)
+  const [previewImage, setPreviewImage] = useState<CompressedImage | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const progressRef = useRef<HTMLDivElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
-    } else if (e.type === "dragleave") {
-      setDragActive(false)
-    }
+    e.preventDefault(); e.stopPropagation()
+    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true)
+    else if (e.type === "dragleave") setDragActive(false)
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const files = Array.from(e.dataTransfer.files).filter((file) => file.type.startsWith("image/"))
-      if (files.length > 0) {
-        setSelectedFiles(files)
-      }
+    e.preventDefault(); e.stopPropagation(); setDragActive(false)
+    if (e.dataTransfer.files?.length) {
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"))
+      if (files.length) setSelectedFiles(files)
     }
   }, [])
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files).filter((file) => file.type.startsWith("image/"))
-      if (files.length > 0) {
-        setSelectedFiles(files)
-      }
+    if (e.target.files?.length) {
+      const files = Array.from(e.target.files).filter((f) => f.type.startsWith("image/"))
+      if (files.length) setSelectedFiles(files)
     }
   }
+
+  // Panel entrance
+  useEffect(() => {
+    if (selectedFiles.length > 0 && panelRef.current) {
+      const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      if (rm) return
+      gsap.fromTo(panelRef.current, { y: 50, opacity: 0, scale: 0.96 }, { y: 0, opacity: 1, scale: 1, duration: 0.7, ease: "power3.out" })
+    }
+  }, [selectedFiles.length > 0])
+
+  // Progress bar
+  useEffect(() => {
+    if (progressRef.current && isCompressing) {
+      gsap.to(progressRef.current, { width: `${compressionProgress}%`, duration: 0.35, ease: "power2.out" })
+    }
+  }, [compressionProgress, isCompressing])
+
+  // Results entrance
+  useEffect(() => {
+    if (compressedImages.length > 0 && resultsRef.current) {
+      const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      if (rm) return
+      gsap.fromTo(
+        resultsRef.current.querySelectorAll(".result-row"),
+        { y: 20, opacity: 0 },
+        { y: 0, opacity: 1, stagger: 0.06, duration: 0.5, ease: "power3.out" },
+      )
+    }
+  }, [compressedImages.length])
 
   const compressImageFile = async (file: File): Promise<CompressedImage> => {
     const originalUrl = URL.createObjectURL(file)
-
-    const isPNG = file.type === "image/png"
-    const options = {
-      maxSizeMB: 5,
-      maxWidthOrHeight: undefined,
-      useWebWorker: true,
-      fileType: isPNG ? "image/jpeg" : file.type,
-      initialQuality: isPNG ? 0.92 : 0.88,
-      alwaysKeepResolution: true,
-      exifOrientation: 1,
-    }
-
+    const outputType = convertToWebP ? "image/webp" : file.type
+    const options = { maxSizeMB: 10, maxWidthOrHeight: 4096, useWebWorker: true, fileType: outputType, initialQuality: quality / 100 }
     try {
       const compressedFile = await imageCompression(file, options)
       const compressedUrl = URL.createObjectURL(compressedFile)
-      const compressionRatio = ((1 - compressedFile.size / file.size) * 100).toFixed(1)
-
-      return {
-        file,
-        originalUrl,
-        compressedUrl,
-        originalSize: file.size,
-        compressedSize: compressedFile.size,
-        compressionRatio: Number.parseFloat(compressionRatio),
-      }
-    } catch (error) {
-      URL.revokeObjectURL(originalUrl)
-      throw error
-    }
+      return { file, originalUrl, compressedUrl, originalSize: file.size, compressedSize: compressedFile.size, compressionRatio: Number.parseFloat(((1 - compressedFile.size / file.size) * 100).toFixed(1)) }
+    } catch (error) { URL.revokeObjectURL(originalUrl); throw error }
   }
 
   const compressImages = async () => {
-    if (selectedFiles.length === 0) return
-
-    setIsCompressing(true)
-    setCompressionProgress(0)
+    if (!selectedFiles.length) return
+    setIsCompressing(true); setCompressionProgress(0)
     const results: CompressedImage[] = []
-
     for (let i = 0; i < selectedFiles.length; i++) {
       try {
-        const compressed = await compressImageFile(selectedFiles[i])
-        results.push(compressed)
+        results.push(await compressImageFile(selectedFiles[i]))
         setCompressionProgress(((i + 1) / selectedFiles.length) * 100)
-      } catch (error) {
-        console.error(`Error compressing ${selectedFiles[i].name}:`, error)
-      }
+      } catch (error) { console.error(`Error compressing ${selectedFiles[i].name}:`, error) }
     }
-
-    setCompressedImages(results)
-    setIsCompressing(false)
+    setCompressedImages(results); setIsCompressing(false)
   }
 
   const downloadCompressedImage = (image: CompressedImage) => {
     const link = document.createElement("a")
     link.href = image.compressedUrl
-    const originalName = image.file.name.split(".")[0]
-    const isPNG = image.file.type === "image/png"
-    const ext = isPNG ? "jpg" : image.file.name.split(".").pop() || "jpg"
-    link.download = `${originalName}-compressed.${ext}`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    link.download = `${image.file.name.split(".")[0]}-compressed.${convertToWebP ? "webp" : image.file.name.split(".").pop() || "jpg"}`
+    document.body.appendChild(link); link.click(); document.body.removeChild(link)
   }
 
-  const downloadAllCompressed = () => {
-    compressedImages.forEach((image) => {
-      downloadCompressedImage(image)
-    })
-  }
+  const downloadAllCompressed = () => compressedImages.forEach(downloadCompressedImage)
 
-  const reset = () => {
-    setSelectedFiles([])
-    setCompressedImages([])
-    setCompressionProgress(0)
-  }
+  const reset = () => { setSelectedFiles([]); setCompressedImages([]); setCompressionProgress(0) }
 
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="container mx-auto px-4 py-12 max-w-4xl">
+    <main className="min-h-screen overflow-x-hidden" style={{ background: "#06060B", color: "#EEEEF2" }}>
+      <div className="mx-auto max-w-5xl px-4 md:px-10">
         <Header activeTab="compress" />
         <NavigationTabs />
 
-        {selectedFiles.length === 0 ? (
-          <UploadArea
-            mode="compress"
-            dragActive={dragActive}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onFileSelect={handleFileInput}
-            multiple
-          />
+        {!selectedFiles.length ? (
+          <UploadArea mode="compress" dragActive={dragActive} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onFileSelect={handleFileInput} multiple />
         ) : (
-          <div className="space-y-8">
-            <div className="relative bg-white/5 rounded-lg p-8 border border-white/10">
-              <button
-                onClick={reset}
-                className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition-colors"
-                aria-label="Remove images"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="mb-6">
-                <h3 className="font-serif text-2xl mb-2">
-                  {compressedImages.length > 0 ? "Compressed Images" : "Selected Images"}
-                </h3>
-                <p className="text-white/60 font-sans text-sm">{selectedFiles.length} images selected</p>
+          <div ref={panelRef} className="opacity-0">
+            <div className="rounded-3xl overflow-hidden" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }}>
+              {/* Top bar */}
+              <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #1A1A28" }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full" style={{ background: C }} />
+                  <span className="font-sans text-xs" style={{ color: "#52525B" }}>{selectedFiles.length} file{selectedFiles.length > 1 ? "s" : ""} selected</span>
+                </div>
+                <button onClick={reset} className="p-1.5 rounded-lg transition-colors hover:bg-[#1A1A28]" style={{ color: "#52525B" }}>
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              {isCompressing && (
-                <div className="mb-8">
-                  <div className="flex justify-between text-sm font-sans mb-2">
-                    <span className="text-white/60">Compressing...</span>
-                    <span className="text-[#13947D]">{Math.round(compressionProgress)}%</span>
+              <div className="p-5 md:p-10">
+                {/* Progress bar */}
+                {isCompressing && (
+                  <div className="mb-8">
+                    <div className="flex justify-between text-xs font-sans mb-2">
+                      <span style={{ color: "#52525B" }}>Compressing...</span>
+                      <span style={{ color: C }}>{Math.round(compressionProgress)}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1A1A28" }}>
+                      <div ref={progressRef} className="h-full rounded-full" style={{ width: "0%", background: `linear-gradient(90deg, ${C}, ${C}cc)`, boxShadow: `0 0 16px ${C}40` }} />
+                    </div>
                   </div>
-                  <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-[#13947D] h-full transition-all duration-300 ease-out"
-                      style={{ width: `${compressionProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+                )}
 
-              {compressedImages.length === 0 ? (
-                <div className="space-y-3 mb-8 max-h-64 overflow-y-auto">
-                  {selectedFiles.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-3 bg-white/5 rounded border border-white/10"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-sans text-sm truncate">{file.name}</p>
-                        <p className="text-white/40 font-sans text-xs">{(file.size / 1024).toFixed(2)} KB</p>
+                {/* File list before compression */}
+                {compressedImages.length === 0 && (
+                  <>
+                    <div className="space-y-2 mb-8 max-h-56 overflow-y-auto">
+                      {selectedFiles.map((file, i) => (
+                        <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: "#06060B", border: "1px solid #1A1A28" }}>
+                          <span className="font-sans text-xs truncate mr-4">{file.name}</span>
+                          <span className="font-mono text-[10px] shrink-0" style={{ color: "#3f3f50" }}>{(file.size / 1024).toFixed(1)} KB</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Quality controls */}
+                    <div className="grid md:grid-cols-2 gap-8 mb-8">
+                      <div>
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="font-sans text-xs" style={{ color: "#52525B" }}>Quality</span>
+                          <span className="font-mono text-xs" style={{ color: C }}>{quality}%</span>
+                        </div>
+                        <Slider
+                          value={[quality]} onValueChange={(v) => setQuality(v[0])} min={10} max={100} step={5}
+                          className="[&_[data-slot=slider-track]]:bg-[#1A1A28] [&_[data-slot=slider-range]]:bg-[#10B981] [&_[data-slot=slider-thumb]]:border-[#10B981] [&_[data-slot=slider-thumb]]:bg-[#06060B]"
+                        />
+                        <p className="font-sans text-[10px] mt-2" style={{ color: "#3f3f50" }}>Lower = smaller file size</p>
+                      </div>
+                      <div className="flex items-center">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <div
+                            className="w-10 h-6 rounded-full relative transition-colors cursor-pointer"
+                            style={{ background: convertToWebP ? C : "#1A1A28" }}
+                            onClick={() => setConvertToWebP(!convertToWebP)}
+                          >
+                            <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-[#EEEEF2] transition-transform duration-200" style={{ transform: convertToWebP ? "translateX(16px)" : "translateX(0)" }} />
+                          </div>
+                          <span className="font-sans text-xs" style={{ color: "#52525B" }}>Convert to WebP</span>
+                        </label>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-3 mb-8 max-h-96 overflow-y-auto">
-                  {compressedImages.map((image, index) => (
-                    <div key={index} className="p-4 bg-white/5 rounded border border-white/10">
-                      <div className="flex items-start justify-between gap-4 mb-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-sans text-sm truncate mb-1">{image.file.name}</p>
-                          <div className="flex gap-4 text-xs font-sans">
-                            <span className="text-white/40">{(image.originalSize / 1024).toFixed(2)} KB</span>
-                            <span className="text-[#13947D]">→</span>
-                            <span className="text-[#13947D]">{(image.compressedSize / 1024).toFixed(2)} KB</span>
-                            <span className="text-[#13947D] font-medium">({image.compressionRatio}% smaller)</span>
+
+                    <button
+                      onClick={compressImages} disabled={isCompressing}
+                      className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-sans text-sm font-semibold transition-all duration-300 disabled:opacity-50"
+                      style={{ background: C, color: "#06060B", boxShadow: `0 0 40px ${C}25` }}
+                    >
+                      {isCompressing ? (
+                        <span className="inline-block w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                      ) : (
+                        <>Compress {selectedFiles.length} file{selectedFiles.length > 1 ? "s" : ""} <ArrowRight className="w-4 h-4" /></>
+                      )}
+                    </button>
+                  </>
+                )}
+
+                {/* Results */}
+                {compressedImages.length > 0 && (
+                  <div ref={resultsRef}>
+                    <div className="space-y-2 mb-8 max-h-80 overflow-y-auto">
+                      {compressedImages.map((image, i) => (
+                        <div key={i} className="result-row flex items-center justify-between gap-4 px-4 py-3.5 rounded-xl" style={{ background: "#06060B", border: "1px solid #1A1A28" }}>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-sans text-xs truncate mb-0.5">{image.file.name}</p>
+                            <div className="flex items-center gap-2 font-mono text-[10px]">
+                              <span style={{ color: "#3f3f50" }}>{(image.originalSize / 1024).toFixed(1)} KB</span>
+                              <span style={{ color: C }}>→</span>
+                              <span style={{ color: C }}>{(image.compressedSize / 1024).toFixed(1)} KB</span>
+                              <span className="font-semibold" style={{ color: C }}>−{image.compressionRatio}%</span>
+                            </div>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0">
+                            <button onClick={() => setPreviewImage(image)} className="p-2 rounded-lg transition-colors hover:bg-[#1A1A28]" style={{ color: "#52525B" }}>
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => downloadCompressedImage(image)} className="p-2 rounded-lg transition-colors hover:bg-[#1A1A28]" style={{ color: C }}>
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
-                        <Button
-                          onClick={() => downloadCompressedImage(image)}
-                          size="sm"
-                          className="bg-[#CCADAC] hover:bg-[#CCADAC]/80 text-black font-sans shrink-0"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
 
-              {compressedImages.length === 0 ? (
-                <Button
-                  onClick={compressImages}
-                  disabled={isCompressing}
-                  className="w-full bg-[#13947D] hover:bg-[#13947D]/80 text-white font-sans text-lg py-6"
-                >
-                  {isCompressing
-                    ? "Compressing..."
-                    : `Compress ${selectedFiles.length} Image${selectedFiles.length > 1 ? "s" : ""}`}
-                </Button>
-              ) : (
-                <div className="space-y-4">
-                  <Button
-                    onClick={downloadAllCompressed}
-                    className="w-full bg-[#CCADAC] hover:bg-[#CCADAC]/80 text-black font-sans text-lg py-6"
-                  >
-                    <Download className="w-5 h-5 mr-2" />
-                    Download All ({compressedImages.length} files)
-                  </Button>
-                  <Button
-                    onClick={reset}
-                    variant="outline"
-                    className="w-full border-white/20 hover:bg-white/10 font-sans bg-transparent"
-                  >
-                    Compress More Images
-                  </Button>
-                </div>
-              )}
+                    <button
+                      onClick={downloadAllCompressed}
+                      className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-sans text-sm font-semibold mb-3 transition-all duration-300"
+                      style={{ background: C, color: "#06060B", boxShadow: `0 0 40px ${C}25` }}
+                    >
+                      <Download className="w-4 h-4" /> Download All ({compressedImages.length})
+                    </button>
+                    <button onClick={reset} className="w-full py-3.5 rounded-2xl font-sans text-xs font-medium transition-colors" style={{ border: "1px solid #1A1A28", color: "#52525B" }}>
+                      Compress more
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -263,6 +257,39 @@ export default function CompressPage() {
         <USPs />
         <Footer />
       </div>
+
+      {/* Preview modal */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#06060Bdd", backdropFilter: "blur(12px)" }} onClick={() => setPreviewImage(null)}>
+          <div className="relative max-w-4xl w-full max-h-[90vh] rounded-3xl overflow-hidden" style={{ background: "#0E0E18", border: "1px solid #1A1A28" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #1A1A28" }}>
+              <div>
+                <p className="font-sans text-sm">{previewImage.file.name}</p>
+                <p className="font-mono text-[10px] mt-0.5">
+                  <span style={{ color: "#3f3f50" }}>{(previewImage.originalSize / 1024).toFixed(1)} KB → </span>
+                  <span style={{ color: C }}>{(previewImage.compressedSize / 1024).toFixed(1)} KB</span>
+                  <span className="ml-2 font-semibold" style={{ color: C }}>−{previewImage.compressionRatio}%</span>
+                </p>
+              </div>
+              <button onClick={() => setPreviewImage(null)} className="p-1.5 rounded-lg transition-colors hover:bg-[#1A1A28]" style={{ color: "#52525B" }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 overflow-auto max-h-[calc(90vh-130px)]">
+              <img src={previewImage.compressedUrl} alt="Compressed preview" className="max-w-full h-auto rounded-xl mx-auto" />
+            </div>
+            <div className="px-6 py-4 flex justify-end" style={{ borderTop: "1px solid #1A1A28" }}>
+              <button
+                onClick={() => { downloadCompressedImage(previewImage); setPreviewImage(null) }}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-sans text-xs font-semibold"
+                style={{ background: C, color: "#06060B" }}
+              >
+                <Download className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

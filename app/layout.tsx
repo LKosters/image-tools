@@ -9,7 +9,7 @@ const _spaceGrotesk = Space_Grotesk({ subsets: ["latin"] })
 const _instrumentSerif = Instrument_Serif({ weight: ["400"], subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Image Tools | Laurens Kosters",
+  title: "Borium",
 }
 
 export default function RootLayout({
