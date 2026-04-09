@@ -21,6 +21,7 @@ export default function CompressPage() {
   const [compressedImages, setCompressedImages] = useState<CompressedImage[]>([])
   const [compressionProgress, setCompressionProgress] = useState(0)
   const [isCompressing, setIsCompressing] = useState(false)
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>("original")
   const [dragActive, setDragActive] = useState(false)
   const [convertToWebP, setConvertToWebP] = useState(false)
   const [quality, setQuality] = useState(80)
@@ -86,6 +87,13 @@ export default function CompressPage() {
       catch (error) { console.error(`Error compressing ${selectedFiles[i].name}:`, error) }
     }
     setCompressedImages(results); setIsCompressing(false)
+  }
+
+  const getExtension = (file: File): string => {
+    if (outputFormat === "original") {
+      return file.name.split(".").pop() || "jpg"
+    }
+    return outputFormat
   }
 
   const downloadCompressedImage = (image: CompressedImage) => {
