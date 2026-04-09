@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react"
 import gsap from "gsap"
 
 interface UploadAreaProps {
-  mode: "convert" | "compress" | "cropper"
+  mode: "convert" | "compress" | "favicon"
   dragActive: boolean
   onDragEnter: (e: React.DragEvent) => void
   onDragLeave: (e: React.DragEvent) => void
@@ -15,7 +15,7 @@ interface UploadAreaProps {
   multiple?: boolean
 }
 
-const colors = { convert: "#7C3AED", compress: "#10B981", cropper: "#F59E0B" } as const
+const colors = { convert: "#7C3AED", compress: "#10B981", favicon: "#F59E0B" } as const
 
 export function UploadArea({ mode, dragActive, onDragEnter, onDragLeave, onDragOver, onDrop, onFileSelect, multiple = false }: UploadAreaProps) {
   const color = colors[mode]

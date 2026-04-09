@@ -4,13 +4,13 @@ import { useEffect, useRef } from "react"
 import gsap from "gsap"
 
 interface HeaderProps {
-  activeTab: "convert" | "compress" | "cropper"
+  activeTab: "convert" | "compress" | "favicon"
 }
 
 const config = {
   convert: { label: "Convert", color: "#7C3AED", num: "01", tagline: "Drag. Drop. Done." },
   compress: { label: "Compress", color: "#10B981", num: "02", tagline: "Same beauty. Tiny file." },
-  cropper: { label: "Crop", color: "#F59E0B", num: "03", tagline: "Pixel perfect." },
+  favicon: { label: "Favicon", color: "#F59E0B", num: "03", tagline: "One click. Every size." },
 } as const
 
 export function Header({ activeTab }: HeaderProps) {

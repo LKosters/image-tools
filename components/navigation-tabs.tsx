@@ -8,12 +8,12 @@ import gsap from "gsap"
 const tabs = [
   { href: "/", id: "convert", label: "Convert", color: "#7C3AED" },
   { href: "/compress", id: "compress", label: "Compress", color: "#10B981" },
-  { href: "/cropper", id: "cropper", label: "Crop", color: "#F59E0B" },
+  { href: "/favicon", id: "favicon", label: "Favicon", color: "#F59E0B" },
 ] as const
 
 export function NavigationTabs() {
   const pathname = usePathname()
-  const activeTab = pathname === "/compress" ? "compress" : pathname === "/cropper" ? "cropper" : "convert"
+  const activeTab = pathname === "/compress" ? "compress" : pathname === "/favicon" ? "favicon" : "convert"
   const barRef = useRef<HTMLElement>(null)
   const navRef = useRef<HTMLDivElement>(null)
   const lineRef = useRef<HTMLDivElement>(null)
